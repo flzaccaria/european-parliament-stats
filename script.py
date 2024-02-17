@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 from datetime import datetime as dt
 import numpy as np
-import logging
+from dateutil.parser import parse
 
 # start & end date of 9th European Parliament
 start_term = dt.strptime("2019-07-02","%Y-%m-%d")
@@ -40,14 +40,12 @@ def get_mandate_duration(df):
                         ((df_mem['role'] == 'http://publications.europa.eu/resource/authority/role/MEMBER') |
                          (df_mem['role'] == 'http://publications.europa.eu/resource/authority/role/MEMBER_EP'))]
         df_mem.reset_index(inplace=True)
+
+        df_mem['memberDuring.startDate'] = df_mem['memberDuring.startDate'].apply(lambda x: parse(x)) if 'memberDuring.startDate' in df_mem else start_term
         end_date = (df_mem['memberDuring.endDate'][0]) if 'memberDuring.endDate' in df_mem else end_term
-        start_date = dt.fromisoformat(df_mem['memberDuring.startDate'][0]).date() if 'memberDuring.startDate' in df_mem else start_term
 
-        df.at[i, 'start_date'] = start_date
-        df.at[i, 'end_date'] = end_term if np.nan else end_date
-
-    df['start_date'] = pd.to_datetime(df['start_date']).dt.date
-    df['end_date'] = pd.to_datetime(df['end_date']).dt.date
+        df.at[i, 'start_date'] = df_mem['memberDuring.startDate'].min().date()
+        df.at[i, 'end_date'] = end_term.date() if np.nan else end_date.date()
 
     return df
 
@@ -107,7 +105,7 @@ def get_all_events_with_details():
 
     df = pd.merge(left=df_events, right=df_details, how='inner', on='id')
     df = beautify_events_with_details(df)
-    #df.to_csv('events_with_details.csv')
+
     return df
 
 
@@ -128,12 +126,17 @@ def get_events_details(activities):
 
 def get_all_events():
     """Retrieves all plenary meetings from EP EVENTS at https://data.europarl.europa.eu/api/v1, returning DataFrame"""
-    response_json = requests.get(url="https://data.europarl.europa.eu/api/v1/events?activity-type=EP_PLENARY_SITTING&format=application%2Fld%2Bjson&offset=0").json()
+    response = requests.get(url="https://data.europarl.europa.eu/api/v1/events?activity-type=EP_PLENARY_SITTING&format=application%2Fld%2Bjson&offset=0")
+    print(response)
+    print(response.status_code)
+    print(response.text)
+    response_json = response.json()
     return pd.json_normalize(response_json, "data")
 
 
 def get_attendance_statistics():
-    """bla bla"""
+    """Retrieves statistics on the member of the European parliament attending plenary sessions from various public
+       endpoints at https://data.europarl.europa.eu/en/developer-corner"""
     df_m = get_all_meps_with_details()
     df_e = get_all_events_with_details()
 
@@ -151,3 +154,4 @@ if __name__ == '__main__':
 
     df_events, df_meps = get_attendance_statistics()
     df_meps.to_csv('european_parliament_stats.csv')
+    df_events.to_csv('european_parliament_plenary_sessions.csv')
